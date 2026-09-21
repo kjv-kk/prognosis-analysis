@@ -447,17 +447,19 @@ km_group = "" if km_group_sel == L["no_km"] else km_group_sel
 overall_on = st.sidebar.checkbox(L["overall_checkbox"], value=True,
                                  key="overall_km")
 
+# 只要会出 KM 图（分组或整体），时间点与图例输入就保持可用
+km_any = bool(km_group) or overall_on
 tp_on = st.sidebar.checkbox(L["tp_checkbox"], value=bool(C.KM_MARK_TIMEPOINTS),
-                            key="tp_on", disabled=(km_group == ""))
+                            key="tp_on", disabled=not km_any)
 tp_text = st.sidebar.text_input(
     L["tp_input_label"],
     value=", ".join(str(int(t)) for t in C.KM_MARK_TIMEPOINTS),
-    key="tp_text", disabled=(not tp_on or km_group == ""))
+    key="tp_text", disabled=(not tp_on or not km_any))
 
 legend_text = st.sidebar.text_input(
     L["legend_input_label"],
     value=", ".join(str(x) for x in C.KM_LEGEND_LABELS),
-    key="legend_text", disabled=(km_group == ""))
+    key="legend_text", disabled=not km_any)
 
 # ---------- 侧边栏：图形设置 ----------
 st.sidebar.header(L["sec_style"])
@@ -489,7 +491,7 @@ if chart_lang == "zh" and CJK_FONT_NAME is None:
 
 # ---------- 解析时间点 ----------
 km_tps = []
-if tp_on and km_group:
+if tp_on and km_any:
     try:
         km_tps = parse_number_list(tp_text)
     except ValueError:

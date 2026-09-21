@@ -47,7 +47,8 @@ def main():
         print("=" * 60)
         for ep, tcol, ecol in get_endpoint_cols(config):
             print(f"\n  终点 {ep}（分组变量：{config.KM_GROUP_VAR}）：")
-            tp = plot_km(df_clean, ep, tcol, ecol, config)
+            save_base = os.path.join(config.OUTPUT_DIR, f"KM_{ep}")
+            _, tp = plot_km(df_clean, ep, tcol, ecol, config, save_path=save_base)
             if tp is not None:
                 timepoints_parts.append(tp)
     else:

@@ -120,6 +120,38 @@ python main.py                                 # 第二步：运行全部分析
 **5. 图片里分组标签想显示“High/Low”而不是 0/1？**
 设置 `KM_LEGEND_LABELS = ["Low", "High"]`（顺序与分组排序一致）。
 
+## 网页版（Streamlit）
+
+除命令行外，本项目自带网页应用 `streamlit_app.py`（纯交互层，分析逻辑与 `main.py`
+完全共用 `src/` 模块）。功能：上传 Excel/CSV 或一键加载示例数据、侧边栏完成全部
+配置（分析变量、KM 分组、时间点标注、导出格式、期刊配色、图例文字）、中英双语界面
+一键切换、图表文字独立选择中文/英文、在线查看 KM 曲线 / Cox 结果表 / 森林图，
+并打包下载全部图片与结果 Excel。
+
+**本地运行：**
+
+```bash
+pip install -r requirements.txt
+streamlit run streamlit_app.py
+```
+
+**部署到 Streamlit Cloud：**
+
+1. 将本仓库推送到 GitHub；
+2. 打开 <https://share.streamlit.io/> → "New app" → 选择该仓库，
+   Main file path 填 `streamlit_app.py` → Deploy；
+3. `requirements.txt` 已包含 streamlit，平台会自动安装依赖，部署后即可直接使用。
+
+**说明：**
+
+- **界面语言**（中文/English）与**图表语言**相互独立：界面语言切换所有页面文字；
+  图表语言只影响图内文字（坐标轴、图例、标注），默认英文（医学期刊惯例）。
+- 图表语言选「中文」时使用仓库内置字体 `assets/fonts/NotoSansCJKsc-Regular.otf`
+  （Noto Sans CJK，可自由分发），通过 matplotlib `font_manager` 加载注册，
+  因此在无中文字体的服务器（Streamlit Cloud）上也不会出现方块乱码。
+- KM 图例文字（`KM_LEGEND_LABELS`）属于图表内容，由用户在界面输入，不做自动翻译。
+- 网页端的列名映射在侧边栏「列名映射」中完成，适配不同来源的数据文件。
+
 ## 引用方式
 
 如果本工具对您的研究有帮助，请引用：

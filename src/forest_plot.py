@@ -1,6 +1,9 @@
 # -*- coding: utf-8 -*-
 """
 森林图模块：以 matplotlib 手绘发表级森林图（单因素 / 多因素 Cox 结果）。
+
+图表内部文字默认值（英文，医学期刊惯例）见 FIG_TEXTS_DEFAULT，
+可通过 plot_forest 的 fig_texts 参数传入同键字典整体或部分替换，实现图表语言切换。
 """
 
 import os
@@ -12,6 +15,19 @@ from matplotlib.ticker import NullLocator, NullFormatter
 from matplotlib.transforms import blended_transform_factory
 
 from .style import get_main_color
+
+# 图表内部文字默认值（英文）
+FIG_TEXTS_DEFAULT = {
+    "xlabel": "Hazard Ratio (log scale)",   # x 轴
+    "col_hr": "HR (95% CI)",                # HR 列标题
+    "col_p": "P value",                     # P 值列标题
+    "ref_fmt": "{var} (ref. {ref})",        # 多分类变量参照组标题
+}
+
+
+def _merge_texts(fig_texts):
+    """把调用方传入的文字字典合并到默认值上；None 时用默认英文。"""
+    return {**FIG_TEXTS_DEFAULT, **(fig_texts or {})}
 
 
 def _format_p(p):
@@ -30,13 +46,18 @@ def _format_hr(hr, lo, hi):
     return f"{hr:.2f}"
 
 
-def _display_rows(results):
+def _display_rows(results, texts=None):
     """
     把结果结构展开为森林图显示行。
+
+    参数:
+        results: Cox 结果列表（含 term 分行信息）
+        texts: 图表文字字典（None 用默认英文）
 
     返回:
         list[dict]: 每行含 kind(header/term)、label、hr、ci_lower、ci_upper、p、variable
     """
+    texts = _merge_texts(texts)
     rows = []
     for r in results:
         meta = r.get("meta", {})
@@ -50,7 +71,8 @@ def _display_rows(results):
             continue
         if vtype == "categorical" and len(r["terms"]) > 1:
             ref = meta.get("ref")
-            header = f"{r['variable']} (ref. {ref})" if ref is not None else r["variable"]
+            header = (texts["ref_fmt"].format(var=r["variable"], ref=ref)
+                      if ref is not None else r["variable"])
             rows.append({"kind": "header", "label": header, "hr": np.nan,
                          "ci_lower": np.nan, "ci_upper": np.nan, "p": r["p"],
                          "variable": r["variable"], "note": ""})
@@ -73,20 +95,25 @@ def _display_rows(results):
     return rows
 
 
-def plot_forest(results, config, out_base, title):
+def plot_forest(results, config, out_base=None, title="", fig_texts=None):
     """
-    绘制森林图并导出。
+    绘制森林图并按需导出，返回 Figure 对象。
 
     参数:
         results: Cox 结果列表（含 term 分行信息）
-        config: 配置模块
-        out_base: 输出路径（不含扩展名）
+        config: 配置模块（取配色、DPI、导出格式）
+        out_base: 输出路径（不含扩展名）；None 时不写磁盘，由调用层保存/下载
         title: 图标题
+        fig_texts: 图表内部文字字典（键见 FIG_TEXTS_DEFAULT），None 用默认英文
+
+    返回:
+        matplotlib Figure（无可用结果时返回 None）
     """
-    rows = _display_rows(results)
+    texts = _merge_texts(fig_texts)
+    rows = _display_rows(results, texts)
     if not rows:
         print("  无可用结果，跳过森林图。")
-        return
+        return None
 
     color = get_main_color(config.COLOR_STYLE, config.KM_COLORS)
     n_rows = len(rows)
@@ -137,7 +164,7 @@ def plot_forest(results, config, out_base, title):
         ticks = sorted(ticks + [1])
     ax.set_xticks(ticks)
     ax.set_xticklabels([f"{t:g}" for t in ticks], fontsize=10)
-    ax.set_xlabel("Hazard Ratio (log scale)", fontsize=11)
+    ax.set_xlabel(texts["xlabel"], fontsize=11)
 
     # HR=1 参考线
     ax.axvline(1, color="gray", ls="--", lw=1, zorder=1)
@@ -145,9 +172,9 @@ def plot_forest(results, config, out_base, title):
     # 右侧文字列：HR (95% CI) 与 P value（x 用轴坐标，可超出绘图区）
     trans = blended_transform_factory(ax.transAxes, ax.transData)
     head_y = n_rows + 0.6
-    ax.text(1.03, head_y, "HR (95% CI)", fontsize=10, fontweight="bold",
+    ax.text(1.03, head_y, texts["col_hr"], fontsize=10, fontweight="bold",
             ha="left", va="center", transform=trans)
-    ax.text(1.42, head_y, "P value", fontsize=10, fontweight="bold",
+    ax.text(1.42, head_y, texts["col_p"], fontsize=10, fontweight="bold",
             ha="left", va="center", transform=trans)
     for row, y in zip(rows, y_positions):
         weight = "bold" if row["kind"] == "header" else "normal"
@@ -163,8 +190,11 @@ def plot_forest(results, config, out_base, title):
     fig.subplots_adjust(left=0.02, right=0.60, bottom=0.12,
                         top=min(0.94, 1 - 0.35 / (n_rows + 3)))
 
-    fmts = ["pdf", "png"] if config.EXPORT_FORMAT == "both" else [config.EXPORT_FORMAT]
-    for fmt in fmts:
-        fig.savefig(f"{out_base}.{fmt}", dpi=max(config.DPI, 300), bbox_inches="tight")
-    plt.close(fig)
-    print(f"  森林图已保存：{out_base}.[{'/'.join(fmts)}]")
+    # 按配置导出（out_base 为 None 时不写磁盘，由调用层处理保存/下载）
+    if out_base is not None:
+        os.makedirs(os.path.dirname(out_base) or ".", exist_ok=True)
+        fmts = ["pdf", "png"] if config.EXPORT_FORMAT == "both" else [config.EXPORT_FORMAT]
+        for fmt in fmts:
+            fig.savefig(f"{out_base}.{fmt}", dpi=max(config.DPI, 300), bbox_inches="tight")
+        print(f"  森林图已保存：{out_base}.[{'/'.join(fmts)}]")
+    return fig

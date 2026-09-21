@@ -39,20 +39,32 @@ def main():
     # 2. 数据检查与清洗
     df_clean, check_summary = check_and_clean(df, config)
 
-    # 3. KM 曲线（OS / PFS 分别绘制）
+    # 3. KM 曲线（OS / PFS 分别绘制）：分组曲线 + 整体（不分组）曲线
     timepoints_parts = []
-    if config.KM_GROUP_VAR:
+    endpoints = list(get_endpoint_cols(config))
+    if config.KM_GROUP_VAR or config.KM_OVERALL:
         print("\n" + "=" * 60)
         print("【第二步】KM 曲线分析")
         print("=" * 60)
-        for ep, tcol, ecol in get_endpoint_cols(config):
-            print(f"\n  终点 {ep}（分组变量：{config.KM_GROUP_VAR}）：")
-            save_base = os.path.join(config.OUTPUT_DIR, f"KM_{ep}")
-            _, tp = plot_km(df_clean, ep, tcol, ecol, config, save_path=save_base)
-            if tp is not None:
-                timepoints_parts.append(tp)
+        if config.KM_GROUP_VAR:
+            for ep, tcol, ecol in endpoints:
+                print(f"\n  终点 {ep}（分组变量：{config.KM_GROUP_VAR}）：")
+                save_base = os.path.join(config.OUTPUT_DIR, f"KM_{ep}")
+                _, tp = plot_km(df_clean, ep, tcol, ecol, config, save_path=save_base)
+                if tp is not None:
+                    timepoints_parts.append(tp)
+        else:
+            print("\nconfig.KM_GROUP_VAR 为空，跳过分组 KM 曲线。")
+        if config.KM_OVERALL:
+            print("\n  整体曲线（不分组，全队列 OS/PFS 分布）：")
+            for ep, tcol, ecol in endpoints:
+                save_base = os.path.join(config.OUTPUT_DIR, f"KM_{ep}_overall")
+                _, tp = plot_km(df_clean, ep, tcol, ecol, config,
+                                save_path=save_base, overall=True)
+                if tp is not None:
+                    timepoints_parts.append(tp)
     else:
-        print("\nconfig.KM_GROUP_VAR 为空，跳过 KM 绘图。")
+        print("\nconfig.KM_GROUP_VAR 与 KM_OVERALL 均为空，跳过 KM 绘图。")
 
     timepoints_df = (pd.concat(timepoints_parts, ignore_index=True)
                      if timepoints_parts else None)

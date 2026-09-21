@@ -68,6 +68,8 @@ LANG = {
         "multi_vars_label": "多因素分析变量",
         "km_group_label": "KM 曲线分组变量",
         "no_km": "（不绘制 KM 曲线）",
+        "overall_checkbox": "同时绘制整体 KM 曲线（不分组，看全队列 OS/PFS 分布）",
+        "overall_suffix": "（整体，不分组）",
         "tp_checkbox": "在 KM 曲线上标注时间点生存率",
         "tp_input_label": "时间点（月，逗号分隔，如 12, 24, 36）",
         "legend_input_label": "KM 图例文字（逗号分隔，可留空；属图表内容，不自动翻译）",
@@ -122,6 +124,8 @@ LANG = {
         "multi_vars_label": "Multivariable variables",
         "km_group_label": "KM curve grouping variable",
         "no_km": "(skip KM curves)",
+        "overall_checkbox": "Also plot overall KM curves (no grouping, whole-cohort OS/PFS distribution)",
+        "overall_suffix": " (overall, no grouping)",
         "tp_checkbox": "Mark survival rates at timepoints on KM curves",
         "tp_input_label": "Timepoints (months, comma-separated, e.g. 12, 24, 36)",
         "legend_input_label": "KM legend labels (comma-separated, optional; chart content, not auto-translated)",
@@ -177,6 +181,7 @@ KM_TEXTS = {
         "ci": "95% CI",
         "na": "NA",
         "grouped_by": "按 {var} 分组",
+        "all_patients": "所有患者",
         "time_1yr": "1 年",
         "time_month": "{t} 个月",
         "surv_label": "{group} {time}：{pct}%",
@@ -299,7 +304,7 @@ def excel_bytes(check_summary, uni_results, multi_results, timepoints_df):
         return Path(td, "analysis_results.xlsx").read_bytes()
 
 
-def run_analysis(df_clean, cfg, chart_lang):
+def run_analysis(df_clean, cfg, chart_lang, overall_on):
     """复用 src/ 模块执行全部分析，返回图表与结果对象（不写磁盘）。"""
     apply_chart_font(chart_lang)
     km_figs, tp_parts = {}, []
@@ -308,6 +313,14 @@ def run_analysis(df_clean, cfg, chart_lang):
             fig, tp = plot_km(df_clean, ep, tcol, ecol, cfg,
                               save_path=None, fig_texts=KM_TEXTS[chart_lang])
             km_figs[ep] = fig
+            if tp is not None:
+                tp_parts.append(tp)
+    if overall_on:
+        # 整体（不分组）曲线：全队列一条曲线，看单纯的 OS/PFS 分布
+        for ep, tcol, ecol in get_endpoint_cols(cfg):
+            fig, tp = plot_km(df_clean, ep, tcol, ecol, cfg, save_path=None,
+                              fig_texts=KM_TEXTS[chart_lang], overall=True)
+            km_figs[f"{ep}_overall"] = fig
             if tp is not None:
                 tp_parts.append(tp)
     timepoints_df = (pd.concat(tp_parts, ignore_index=True)
@@ -431,6 +444,9 @@ km_group_sel = st.sidebar.selectbox(L["km_group_label"], group_options,
                                     key="km_group")
 km_group = "" if km_group_sel == L["no_km"] else km_group_sel
 
+overall_on = st.sidebar.checkbox(L["overall_checkbox"], value=True,
+                                 key="overall_km")
+
 tp_on = st.sidebar.checkbox(L["tp_checkbox"], value=bool(C.KM_MARK_TIMEPOINTS),
                             key="tp_on", disabled=(km_group == ""))
 tp_text = st.sidebar.text_input(
@@ -499,7 +515,8 @@ if st.button(L["run_button"], type="primary", key="run_button"):
                 tuple(uni_vars_eff), tuple(multi_vars_eff),
                 km_group, tuple(cfg.KM_LEGEND_LABELS), tuple(km_tps),
                 style, tuple(custom_colors))
-            st.session_state["results"] = run_analysis(df_clean, cfg, chart_lang)
+            st.session_state["results"] = run_analysis(df_clean, cfg, chart_lang,
+                                                       overall_on)
             st.session_state["check_summary"] = check_summary
             st.session_state["n_clean"] = len(df_clean)
             st.success(L["done"])
@@ -521,7 +538,10 @@ with st.expander(L["check_expander"]):
 if res["km_figs"]:
     st.subheader(L["km_header"])
     for ep, fig in res["km_figs"].items():
-        st.markdown(f"**{ep}**")
+        if ep.endswith("_overall"):
+            st.markdown(f"**{ep[:-len('_overall')]}**{L['overall_suffix']}")
+        else:
+            st.markdown(f"**{ep}**")
         st.pyplot(fig)
 
 st.subheader(L["uni_header"])

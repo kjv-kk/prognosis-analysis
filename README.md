@@ -8,7 +8,8 @@ KM 曲线、单因素/多因素 Cox 回归、森林图到 Excel 结果导出的�
 
 - **数据检查清洗**：自动检查时间缺失/非正值、事件非 0/1、特征缺失，打印中文报告并剔除问题行
 - **KM 曲线**：OS / PFS 分别绘制，log-rank 检验 P 值，中位生存期及 95%CI，
-  图下方 number at risk 风险人数表，可配置时间点生存率标注（如 1-yr: 85.2%）
+  图下方 number at risk 风险人数表，可配置时间点生存率标注（如 1-yr: 85.2%）；
+  可选整体（不分组）曲线，查看全队列单纯的 OS/PFS 分布（`KM_OVERALL`）
 - **单因素 Cox**：逐变量建模，多分类变量给出整体似然比检验 P 值及各水平 HR/95%CI
 - **多因素 Cox**：自动纳入单因素 P<0.05 的变量，或手动指定；多分类变量整体 P 值
   用全模型 vs 简化模型的似然比检验
@@ -77,6 +78,7 @@ python main.py                                 # 第二步：运行全部分析
 | `VAR_TYPES` | 逐变量指定类型：`"continuous"`/`"binary"`/`"categorical"`（哑变量）/`"ordinal"`；不指定的自动识别 |
 | `CAT_LEVELS` | 多分类/二分类变量的水平顺序，**第一组为参照组**；不填则按取值排序 |
 | `KM_GROUP_VAR` | KM 曲线分组变量；空字符串则跳过 KM 绘图 |
+| `KM_OVERALL` | 是否额外绘制整体（不分组）KM 曲线：全队列一条曲线、不做 log-rank，用于查看单纯的 OS/PFS 分布；输出 `KM_OS_overall` / `KM_PFS_overall`；默认 `True` |
 | `KM_MARK_TIMEPOINTS` | 曲线上标注生存率的时间点（月），如 `[12, 24, 36]`；空列表不标注 |
 | `EXPORT_FORMAT` | 图片导出格式：`"pdf"`/`"png"`/`"both"` |
 | `COLOR_STYLE` | 配色风格：`"lancet"`/`"nejm"`/`"jama"`/`"nature"`/`"jco"`/`"custom"` |

@@ -40,6 +40,10 @@ CAT_LEVELS = {
 # KM 曲线分组变量；空字符串 "" 则跳过 KM 绘图
 KM_GROUP_VAR = "Gene_High"
 
+# 是否额外绘制整体（不分组）KM 曲线：全队列一条曲线，不做 log-rank，
+# 用于查看单纯的 OS / PFS 分布与中位生存期；输出文件名 KM_OS_overall / KM_PFS_overall
+KM_OVERALL = True
+
 # 需要在曲线上标注生存率的时间点（月）；空列表则不标注
 KM_MARK_TIMEPOINTS = [12, 24, 36]
 

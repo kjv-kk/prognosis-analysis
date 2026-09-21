@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 KM 曲线模块：Kaplan-Meier 曲线、log-rank 检验、中位生存期、风险人数表、时间点生存率标注。
+支持分组曲线与整体（不分组）曲线两种模式。
 """
 
 import os
@@ -35,6 +36,7 @@ FIG_TEXTS_DEFAULT = {
     "ci": "95% CI",                                   # CI 前缀
     "na": "NA",                                       # 缺失占位
     "grouped_by": "Grouped by {var}",                 # 图例标题
+    "all_patients": "All patients",                   # 整体（不分组）曲线标签
     "time_1yr": "1-yr",                               # 12 月标注
     "time_month": "{t}-month",                        # 其余月份标注模板
     "surv_label": "{group} {time}: {pct}%",           # 时间点生存率标注
@@ -114,7 +116,8 @@ def _time_label(t, texts):
     return texts["time_month"].format(t=int(t))
 
 
-def plot_km(df, endpoint, time_col, event_col, config, save_path=None, fig_texts=None):
+def plot_km(df, endpoint, time_col, event_col, config, save_path=None,
+            fig_texts=None, overall=False):
     """
     绘制单个终点的 KM 曲线（含 log-rank P 值、中位生存期及 95%CI、风险人数表、
     时间点生存率标注）。
@@ -129,6 +132,8 @@ def plot_km(df, endpoint, time_col, event_col, config, save_path=None, fig_texts
         save_path: 输出路径（不含扩展名）。None 时不写磁盘（返回值供图层保存，
             如 Streamlit 用 BytesIO）；有值时按 config.EXPORT_FORMAT 保存 pdf/png。
         fig_texts: 图表内部文字字典（键见 FIG_TEXTS_DEFAULT），None 用默认英文。
+        overall: True 时绘制整体曲线（不分组，全队列一条曲线，不做 log-rank），
+            用于查看单纯的 OS/PFS 分布；此时忽略 config.KM_GROUP_VAR。
 
     返回:
         tuple: (matplotlib Figure, 时间点生存率汇总 DataFrame 或 None)
@@ -137,19 +142,25 @@ def plot_km(df, endpoint, time_col, event_col, config, save_path=None, fig_texts
     group_var = config.KM_GROUP_VAR
     use_labels = list(config.KM_LEGEND_LABELS)
 
-    # 去掉分组变量或终点列缺失的行
-    d = df.dropna(subset=[group_var, time_col, event_col]).copy()
-
-    # 分组顺序：优先 CAT_LEVELS，否则按取值排序
-    levels = list(pd.unique(d[group_var]))
-    custom = config.CAT_LEVELS.get(group_var)
-    if custom:
-        levels = [l for l in custom if l in set(levels)]
+    if overall:
+        # 整体模式：全队列一条曲线，仅一个虚拟分组
+        d = df.dropna(subset=[time_col, event_col]).copy()
+        levels = [texts["all_patients"]]
+        subs = {levels[0]: d}
     else:
-        try:
-            levels = sorted(levels)
-        except TypeError:
-            levels = sorted(levels, key=lambda x: str(x))
+        # 去掉分组变量或终点列缺失的行
+        d = df.dropna(subset=[group_var, time_col, event_col]).copy()
+        # 分组顺序：优先 CAT_LEVELS，否则按取值排序
+        levels = list(pd.unique(d[group_var]))
+        custom = config.CAT_LEVELS.get(group_var)
+        if custom:
+            levels = [l for l in custom if l in set(levels)]
+        else:
+            try:
+                levels = sorted(levels)
+            except TypeError:
+                levels = sorted(levels, key=lambda x: str(x))
+        subs = {lev: d[d[group_var] == lev] for lev in levels}
 
     palette = get_palette(config.COLOR_STYLE, config.KM_COLORS)
     ylabel = texts["ylabel_OS"] if endpoint == "OS" else texts["ylabel_PFS"]
@@ -167,7 +178,7 @@ def plot_km(df, endpoint, time_col, event_col, config, save_path=None, fig_texts
     kmfs = {}
     legend_entries = []
     for i, lev in enumerate(levels):
-        sub = d[d[group_var] == lev]
+        sub = subs[lev]
         kmf = KaplanMeierFitter()
         kmf.fit(sub[time_col], sub[event_col], label=str(lev))
         kmfs[lev] = (kmf, sub)
@@ -183,8 +194,9 @@ def plot_km(df, endpoint, time_col, event_col, config, save_path=None, fig_texts
         label = use_labels[i] if i < len(use_labels) else str(lev)
         legend_entries.append(_median_text(label, _median_with_ci(kmf), texts))
 
-    # log-rank 检验：2 组用 logrank_test，>2 组用 multivariate_logrank_test
-    if len(levels) == 2:
+    # log-rank 检验：2 组用 logrank_test，>2 组用 multivariate_logrank_test；
+    # 整体（1 组）模式不做检验
+    if not overall and len(levels) == 2:
         (l1, l2) = levels
         res = logrank_test(
             kmfs[l1][1][time_col], kmfs[l2][1][time_col],
@@ -192,7 +204,7 @@ def plot_km(df, endpoint, time_col, event_col, config, save_path=None, fig_texts
             event_observed_B=kmfs[l2][1][event_col],
         )
         p_logrank = float(res.p_value)
-    elif len(levels) > 2:
+    elif not overall and len(levels) > 2:
         res = multivariate_logrank_test(d[time_col], d[group_var], d[event_col])
         p_logrank = float(res.p_value)
     else:
@@ -203,11 +215,12 @@ def plot_km(df, endpoint, time_col, event_col, config, save_path=None, fig_texts
         ax.text(0.03, 0.06, texts["logrank_prefix"] + " " + _format_p(p_logrank, texts),
                 transform=ax.transAxes, ha="left", va="bottom", fontsize=11)
 
-    # 图例：显示中位生存期及 95%CI
+    # 图例：显示中位生存期及 95%CI（整体模式不显示分组标题）
     handles = [plt.Line2D([0], [0], color=palette[i % len(palette)], lw=2)
                for i in range(len(levels))]
+    legend_title = None if overall else texts["grouped_by"].format(var=group_var)
     ax.legend(handles, legend_entries, loc="upper right", frameon=False,
-              fontsize=10, title=texts["grouped_by"].format(var=group_var))
+              fontsize=10, title=legend_title)
 
     # 时间点标注：竖虚线 + 各组生存率（各组错开避免重叠）
     tp_records = []
@@ -273,7 +286,8 @@ def plot_km(df, endpoint, time_col, event_col, config, save_path=None, fig_texts
         for fmt in fmts:
             fig.savefig(f"{save_path}.{fmt}", dpi=max(config.DPI, 300),
                         bbox_inches="tight", pad_inches=0.08)
-        print(f"  KM 曲线已保存：{save_path}.[{'/'.join(fmts)}]"
-              f"（log-rank {_format_p(p_logrank, texts)}）")
+        extra = (f"（log-rank {_format_p(p_logrank, texts)}）"
+                 if np.isfinite(p_logrank) else "（整体曲线）")
+        print(f"  KM 曲线已保存：{save_path}.[{'/'.join(fmts)}]{extra}")
         plt.close(fig)
     return fig, tp_df
